@@ -1,5 +1,13 @@
 # UGC NET Paper 1 – MCQ Solver (Gemini Powered)
 
+## What is this?
+
+I built this app to make UGC NET prep less painful — especially the part where you sit and manually match answers with the key after every mock test. It takes a scanned PDF question paper, extracts the MCQs using Gemini, lets you attempt them, and then evaluates your answers automatically.
+
+Originally, I made this for my girlfriend to save her time during NET prep. It turned out pretty useful, so I cleaned it up into something reusable.
+
+
+
 ## Deployment Instructions
 
 ### Run Locally
