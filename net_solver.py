@@ -207,15 +207,26 @@ if st.session_state.mcqs:
     user_answers = {}
 
     for q_num, data in first_fifty.items():
-        options = data["options"]
-
+    
+        question_text = data.get("question", "")
+        options = data.get("options", {})
+    
+        st.markdown(f"---")
+        st.markdown(f"### Q{q_num}")
+    
+        # If question contains table markers, render 
+        if "|" in question_text:
+            st.markdown(question_text)
+        else:
+            st.write(question_text)
+    
         choice = st.radio(
-            label=f"Q{q_num}",
+            label="Select your answer:",
             options=list(options.keys()),
             format_func=lambda x: f"{x}. {options[x]}",
             key=f"q_{q_num}"
         )
-
+    
         user_answers[q_num] = choice
 
     if st.button("Submit Test"):
@@ -251,3 +262,4 @@ if st.session_state.mcqs:
 
 
         st.markdown(f"## Final Score: {score} / {len(first_fifty)}")
+
