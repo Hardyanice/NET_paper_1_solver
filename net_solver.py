@@ -19,7 +19,7 @@ if not API_KEY:
 
 genai.configure(api_key=API_KEY)
 
-# Extraction model (same as your code)
+# Extraction model 
 extract_model = genai.GenerativeModel(
     "gemini-2.5-flash",
     generation_config={
@@ -44,7 +44,7 @@ uploaded_pdf = st.file_uploader("Upload UGC NET Paper PDF", type=["pdf"])
 
 
 # ----------------------------
-# YOUR EXTRACTION LOGIC (UNCHANGED)
+# EXTRACTION LOGIC
 # ----------------------------
 
 def extract_with_gemini(pages):
@@ -194,7 +194,7 @@ if st.button("Extract Questions"):
 
 
 # ----------------------------
-# TEST FORM (FIRST 4 QUESTIONS ONLY)
+# TEST FORM 
 # ----------------------------
 
 if st.session_state.mcqs:
@@ -248,5 +248,6 @@ if st.session_state.mcqs:
 
                 if explanation:
                     st.info(f"Explanation: {explanation}")
+
 
         st.markdown(f"## Final Score: {score} / {len(first_fifty)}")
