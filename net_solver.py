@@ -152,18 +152,37 @@ Do not add commentary.
 # BATCH EVALUATION (NEW)
 # ----------------------------
 
-def solve_in_batches(mcqs, user_answers):
+def solve_in_batches(mcqs, user_answers, batch_size=3):
     all_results = {}
+    items = list(mcqs.items())
 
-    for q_num, q_data in mcqs.items():
+    for i in range(0, len(items), batch_size):
 
-        single_q = {q_num: q_data}
-        single_user = {q_num: user_answers[q_num]}
+        batch_raw = dict(items[i:i+batch_size])
 
-        result = solve_with_reason_model(single_q, single_user)
+        # Build smaller tutoring-style prompt batch
+        batch = {}
+        batch_user = {}
+
+        for k, v in batch_raw.items():
+            batch[k] = {
+                "question": v.get("question", ""),
+                "options": v.get("options", {})
+            }
+            batch_user[k] = user_answers[k]
+
+        result = solve_with_reason_model(batch, batch_user)
 
         if not result:
-            return {}
+            # Do not abort whole test
+            for k in batch.keys():
+                all_results[k] = {
+                    "correct_option": None,
+                    "user_option": user_answers[k],
+                    "is_correct": None,
+                    "explanation": "Evaluation failed for this question."
+                }
+            continue
 
         all_results.update(result)
 
@@ -243,7 +262,7 @@ if st.session_state.mcqs:
     if st.button("Submit Test"):
 
         with st.spinner("Evaluating answers..."):
-            correct_answers = solve_in_batches(first_fifty, user_answers)
+            correct_answers = solve_in_batches(first_fifty, user_answers, batch_size=3)
 
         if not correct_answers:
             st.error("Evaluation failed. Please try again.")
@@ -275,6 +294,7 @@ if st.session_state.mcqs:
                     st.info(f"Explanation: {explanation}")
 
         st.markdown(f"## Final Score: {score} / {len(first_fifty)}")
+
 
 
 
