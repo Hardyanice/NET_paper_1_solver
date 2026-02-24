@@ -19,22 +19,14 @@ if not API_KEY:
 
 genai.configure(api_key=API_KEY)
 
-# Extraction model 
 extract_model = genai.GenerativeModel(
     "gemini-2.5-flash",
-    generation_config={
-        "temperature": 0,
-        "top_p": 0.1
-    }
+    generation_config={"temperature": 0, "top_p": 0.1}
 )
 
-# Separate reasoning model
 reason_model = genai.GenerativeModel(
     "gemini-3-flash-preview",
-    generation_config={
-        "temperature": 0,
-        "top_p": 0.1
-    }
+    generation_config={"temperature": 0, "top_p": 0.1}
 )
 
 st.set_page_config(layout="wide")
@@ -49,27 +41,15 @@ uploaded_pdf = st.file_uploader("Upload UGC NET Paper PDF", type=["pdf"])
 
 def extract_with_gemini(pages):
     prompt = """
-You are given images of a UGC NET Paper 1 question paper.
+Extract ONLY English MCQs from the given UGC NET Paper.
 
-Extract ONLY English MCQs.
-Ignore Hindi.
-Ignore instructions.
-Ignore metadata.
-Ignore page headers.
-
-IMPORTANT:
-If a question contains a TABLE, DATA, PASSAGE, CHART, or any structured content,
-you MUST include the FULL table text exactly as visible.
-Do NOT summarize.
-Do NOT omit numeric values.
-Do NOT simplify tables.
-Preserve all numbers, percentages, and rows.
-
-Return STRICT JSON in this format:
+If a question contains a TABLE, preserve it fully.
+Do not summarize.
+Return STRICT JSON:
 
 {
   "1": {
-    "question": "FULL question text including table if present",
+    "question": "...",
     "options": {
       "1": "...",
       "2": "...",
@@ -79,12 +59,7 @@ Return STRICT JSON in this format:
   }
 }
 
-Extract all 50 questions if present.
-
-Return ONLY raw JSON.
-Do NOT wrap in markdown.
-Do NOT add explanations.
-Do NOT add markdown.
+Return raw JSON only.
 """
 
     response = extract_model.generate_content([prompt] + pages)
@@ -102,17 +77,13 @@ def clean_json_response(text):
 
 
 # ----------------------------
-# REASONING FUNCTION (UPDATED)
+# REASONING FUNCTION
 # ----------------------------
 
 def solve_with_reason_model(mcqs_subset, user_answers):
-    prompt = f"""
-You are evaluating a UGC NET Paper 1 test.
 
-For each question:
-1. Determine the correct option.
-2. Compare it with the user's selected option.
-3. If wrong, provide a brief explanation (1–2 lines).
+    prompt = f"""
+Evaluate these MCQs.
 
 Return ONLY JSON in this format:
 
@@ -121,19 +92,17 @@ Return ONLY JSON in this format:
     "correct_option": "4",
     "user_option": "2",
     "is_correct": false,
-    "explanation": "Short explanation here."
+    "explanation": "Short explanation"
   }}
 }}
 
 Questions:
-{json.dumps(mcqs_subset, indent=2)}
+{json.dumps(mcqs_subset)}
 
 User Answers:
-{json.dumps(user_answers, indent=2)}
+{json.dumps(user_answers)}
 
-Return ONLY raw JSON.
-Do NOT wrap in markdown.
-Do NOT add commentary.
+Return raw JSON only.
 """
 
     try:
@@ -144,23 +113,37 @@ Do NOT add commentary.
 
     cleaned = clean_json_response(raw_text)
 
-    # Attempt 1: direct parse
     try:
         return json.loads(cleaned)
     except Exception:
-        pass
+        try:
+            start = cleaned.find("{")
+            end = cleaned.rfind("}") + 1
+            return json.loads(cleaned[start:end])
+        except Exception:
+            return {}
 
-    # Attempt 2: extract JSON substring
-    try:
-        start = cleaned.find("{")
-        end = cleaned.rfind("}") + 1
-        if start != -1 and end != -1:
-            possible_json = cleaned[start:end]
-            return json.loads(possible_json)
-    except Exception:
-        pass
 
-    return {}
+# ----------------------------
+# BATCH EVALUATION (NEW)
+# ----------------------------
+
+def solve_in_batches(mcqs, user_answers, batch_size=10):
+    all_results = {}
+    items = list(mcqs.items())
+
+    for i in range(0, len(items), batch_size):
+        batch = dict(items[i:i+batch_size])
+        batch_user = {k: user_answers[k] for k in batch.keys()}
+
+        batch_result = solve_with_reason_model(batch, batch_user)
+
+        if not batch_result:
+            return {}
+
+        all_results.update(batch_result)
+
+    return all_results
 
 
 # ----------------------------
@@ -183,9 +166,6 @@ if st.button("Extract Questions"):
 
     pages = convert_from_bytes(uploaded_pdf.read(), dpi=200)
 
-    status = st.empty()
-    status.info("Extracting questions... Please wait.")
-
     raw_output = extract_with_gemini(pages)
     cleaned_output = clean_json_response(raw_output)
 
@@ -197,9 +177,6 @@ if st.button("Extract Questions"):
 
         st.session_state.mcqs = mcqs
         st.success(f"Extracted {len(mcqs)} questions.")
-
-        with st.expander("View Extracted Questions (JSON)"):
-            st.json(mcqs)
 
     except Exception as e:
         st.error("Extraction failed.")
@@ -227,11 +204,7 @@ if st.session_state.mcqs:
 
         st.markdown("---")
         st.markdown(f"### Q{q_num}")
-
-        if "|" in question_text:
-            st.markdown(question_text)
-        else:
-            st.write(question_text)
+        st.markdown(question_text)
 
         choice = st.radio(
             label="Select your answer:",
@@ -242,21 +215,17 @@ if st.session_state.mcqs:
 
         user_answers[q_num] = choice
 
-    # ----------------------------
-    # SUBMIT BLOCK (UPDATED)
-    # ----------------------------
 
     if st.button("Submit Test"):
 
-        with st.spinner("Evaluating answers..."):
-            correct_answers = solve_with_reason_model(first_fifty, user_answers)
+        with st.spinner("Evaluating answers in batches..."):
+            correct_answers = solve_in_batches(first_fifty, user_answers, batch_size=10)
 
         if not correct_answers:
-            st.error("Evaluation failed due to invalid model response. Please try again.")
+            st.error("Evaluation failed. Please try again.")
             st.stop()
 
         score = 0
-
         st.markdown("## Results")
 
         for q_num in first_fifty.keys():
@@ -264,7 +233,7 @@ if st.session_state.mcqs:
             result = correct_answers.get(str(q_num)) or correct_answers.get(int(q_num))
 
             if not result:
-                st.error(f"Q{q_num}: Evaluation missing.")
+                st.error(f"Q{q_num}: Missing evaluation.")
                 continue
 
             correct_opt = result.get("correct_option")
@@ -278,7 +247,6 @@ if st.session_state.mcqs:
                 st.error(f"Q{q_num}: Wrong")
                 st.write(f"Your Answer: {user_opt}")
                 st.write(f"Correct Answer: {correct_opt}")
-
                 if explanation:
                     st.info(f"Explanation: {explanation}")
 
