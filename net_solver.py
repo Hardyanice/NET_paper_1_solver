@@ -133,7 +133,21 @@ def solve_in_batches(mcqs, user_answers, batch_size=10):
     items = list(mcqs.items())
 
     for i in range(0, len(items), batch_size):
-        batch = dict(items[i:i+batch_size])
+
+        batch_raw = dict(items[i:i+batch_size])
+
+        # Compress question text to reduce token size
+        batch = {}
+        for k, v in batch_raw.items():
+            compressed_question = " ".join(
+                v.get("question", "").split()
+            )  # removes extra whitespace + newlines
+
+            batch[k] = {
+                "question": compressed_question,
+                "options": v.get("options", {})
+            }
+
         batch_user = {k: user_answers[k] for k in batch.keys()}
 
         batch_result = solve_with_reason_model(batch, batch_user)
@@ -251,3 +265,4 @@ if st.session_state.mcqs:
                     st.info(f"Explanation: {explanation}")
 
         st.markdown(f"## Final Score: {score} / {len(first_fifty)}")
+
