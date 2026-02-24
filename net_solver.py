@@ -82,7 +82,6 @@ def clean_json_response(text):
 
 def solve_with_reason_model(single_q_dict, user_answer_dict):
 
-    # single_q_dict contains exactly ONE question
     q_num, q_data = list(single_q_dict.items())[0]
     question_text = q_data.get("question", "")
     options = q_data.get("options", {})
@@ -102,24 +101,20 @@ Options:
 
 The student selected option: {user_option}
 
-1. Determine internally which option is correct.
-2. State whether the student is correct.
-3. If incorrect, explain briefly why.
-4. Keep explanation concise (2-4 lines).
+1. Decide internally whether the student is correct.
+2. Respond ONLY in JSON format below.
+3. Do NOT generate an answer key.
+4. Do NOT list all correct options.
+5. Only evaluate this one question.
 
-Return ONLY JSON in this format:
+Return ONLY JSON:
 
 {{
-  "{q_num}": {{
-    "correct_option": "X",
-    "user_option": "{user_option}",
-    "is_correct": true/false,
-    "explanation": "Short explanation"
-  }}
+  "is_correct": true/false,
+  "explanation": "Short explanation (2-4 lines)"
 }}
 
 Return raw JSON only.
-Do not add commentary.
 """
 
     try:
@@ -129,59 +124,55 @@ Do not add commentary.
         )
 
         if not response.candidates:
-            return {}
+            return None
 
         raw_text = response.text.strip()
 
     except Exception:
-        return {}
+        return None
 
     cleaned = clean_json_response(raw_text)
 
     try:
-        return json.loads(cleaned)
+        parsed = json.loads(cleaned)
+        return {
+            q_num: {
+                "is_correct": parsed.get("is_correct"),
+                "explanation": parsed.get("explanation", "")
+            }
+        }
     except Exception:
         try:
             start = cleaned.find("{")
             end = cleaned.rfind("}") + 1
-            return json.loads(cleaned[start:end])
+            parsed = json.loads(cleaned[start:end])
+            return {
+                q_num: {
+                    "is_correct": parsed.get("is_correct"),
+                    "explanation": parsed.get("explanation", "")
+                }
+            }
         except Exception:
-            return {}
-
+            return None
 # ----------------------------
 # BATCH EVALUATION (NEW)
 # ----------------------------
 
-def solve_in_batches(mcqs, user_answers, batch_size=3):
+def solve_in_batches(mcqs, user_answers):
     all_results = {}
-    items = list(mcqs.items())
 
-    for i in range(0, len(items), batch_size):
+    for q_num, q_data in mcqs.items():
 
-        batch_raw = dict(items[i:i+batch_size])
+        single_q = {q_num: q_data}
+        single_user = {q_num: user_answers[q_num]}
 
-        # Build smaller tutoring-style prompt batch
-        batch = {}
-        batch_user = {}
-
-        for k, v in batch_raw.items():
-            batch[k] = {
-                "question": v.get("question", ""),
-                "options": v.get("options", {})
-            }
-            batch_user[k] = user_answers[k]
-
-        result = solve_with_reason_model(batch, batch_user)
+        result = solve_with_reason_model(single_q, single_user)
 
         if not result:
-            # Do not abort whole test
-            for k in batch.keys():
-                all_results[k] = {
-                    "correct_option": None,
-                    "user_option": user_answers[k],
-                    "is_correct": None,
-                    "explanation": "Evaluation failed for this question."
-                }
+            all_results[q_num] = {
+                "is_correct": None,
+                "explanation": "Evaluation failed for this question."
+            }
             continue
 
         all_results.update(result)
@@ -262,7 +253,7 @@ if st.session_state.mcqs:
     if st.button("Submit Test"):
 
         with st.spinner("Evaluating answers..."):
-            correct_answers = solve_in_batches(first_fifty, user_answers, batch_size=3)
+            correct_answers = solve_in_batches(first_fifty, user_answers)
 
         if not correct_answers:
             st.error("Evaluation failed. Please try again.")
@@ -270,31 +261,28 @@ if st.session_state.mcqs:
 
         score = 0
         st.markdown("## Results")
-
+        
         for q_num in first_fifty.keys():
-
-            result = correct_answers.get(str(q_num)) or correct_answers.get(int(q_num))
-
+        
+            result = correct_answers.get(str(q_num)) or correct_answers.get(q_num)
+        
             if not result:
-                st.error(f"Q{q_num}: Missing evaluation.")
+                st.error(f"Q{q_num}: Evaluation missing.")
                 continue
-
-            correct_opt = result.get("correct_option")
-            user_opt = user_answers[q_num]
+        
+            is_correct = result.get("is_correct")
             explanation = result.get("explanation", "")
-
-            if user_opt == correct_opt:
+        
+            if is_correct is True:
                 score += 1
-                st.success(f"Q{q_num}: Correct (Option {correct_opt})")
-            else:
+                st.success(f"Q{q_num}: Correct")
+            elif is_correct is False:
                 st.error(f"Q{q_num}: Wrong")
-                st.write(f"Your Answer: {user_opt}")
-                st.write(f"Correct Answer: {correct_opt}")
-                if explanation:
-                    st.info(f"Explanation: {explanation}")
-
+                st.write(f"Your Answer: {user_answers[q_num]}")
+            else:
+                st.warning(f"Q{q_num}: Evaluation failed")
+        
+            if explanation:
+                st.info(f"Explanation: {explanation}")
+        
         st.markdown(f"## Final Score: {score} / {len(first_fifty)}")
-
-
-
-
