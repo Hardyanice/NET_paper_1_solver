@@ -102,7 +102,7 @@ def clean_json_response(text):
 
 
 # ----------------------------
-# REASONING FUNCTION
+# REASONING FUNCTION (UPDATED)
 # ----------------------------
 
 def solve_with_reason_model(mcqs_subset, user_answers):
@@ -122,12 +122,6 @@ Return ONLY JSON in this format:
     "user_option": "2",
     "is_correct": false,
     "explanation": "Short explanation here."
-  }},
-  "2": {{
-    "correct_option": "3",
-    "user_option": "3",
-    "is_correct": true,
-    "explanation": ""
   }}
 }}
 
@@ -142,8 +136,31 @@ Do NOT wrap in markdown.
 Do NOT add commentary.
 """
 
-    response = reason_model.generate_content(prompt)
-    return json.loads(clean_json_response(response.text))
+    try:
+        response = reason_model.generate_content(prompt)
+        raw_text = response.text.strip()
+    except Exception:
+        return {}
+
+    cleaned = clean_json_response(raw_text)
+
+    # Attempt 1: direct parse
+    try:
+        return json.loads(cleaned)
+    except Exception:
+        pass
+
+    # Attempt 2: extract JSON substring
+    try:
+        start = cleaned.find("{")
+        end = cleaned.rfind("}") + 1
+        if start != -1 and end != -1:
+            possible_json = cleaned[start:end]
+            return json.loads(possible_json)
+    except Exception:
+        pass
+
+    return {}
 
 
 # ----------------------------
@@ -172,12 +189,9 @@ if st.button("Extract Questions"):
     raw_output = extract_with_gemini(pages)
     cleaned_output = clean_json_response(raw_output)
 
-    
-
     try:
         mcqs = json.loads(cleaned_output)
 
-        # If Gemini returns list, convert to dict
         if isinstance(mcqs, list):
             mcqs = {str(i+1): q for i, q in enumerate(mcqs)}
 
@@ -194,7 +208,7 @@ if st.button("Extract Questions"):
 
 
 # ----------------------------
-# TEST FORM 
+# TEST FORM
 # ----------------------------
 
 if st.session_state.mcqs:
@@ -207,31 +221,39 @@ if st.session_state.mcqs:
     user_answers = {}
 
     for q_num, data in first_fifty.items():
-    
+
         question_text = data.get("question", "")
         options = data.get("options", {})
-    
-        st.markdown(f"---")
+
+        st.markdown("---")
         st.markdown(f"### Q{q_num}")
-    
-        # If question contains table markers, render 
+
         if "|" in question_text:
             st.markdown(question_text)
         else:
             st.write(question_text)
-    
+
         choice = st.radio(
             label="Select your answer:",
             options=list(options.keys()),
             format_func=lambda x: f"{x}. {options[x]}",
             key=f"q_{q_num}"
         )
-    
+
         user_answers[q_num] = choice
+
+    # ----------------------------
+    # SUBMIT BLOCK (UPDATED)
+    # ----------------------------
 
     if st.button("Submit Test"):
 
-        correct_answers = solve_with_reason_model(first_fifty, user_answers)
+        with st.spinner("Evaluating answers..."):
+            correct_answers = solve_with_reason_model(first_fifty, user_answers)
+
+        if not correct_answers:
+            st.error("Evaluation failed due to invalid model response. Please try again.")
+            st.stop()
 
         score = 0
 
@@ -260,6 +282,4 @@ if st.session_state.mcqs:
                 if explanation:
                     st.info(f"Explanation: {explanation}")
 
-
         st.markdown(f"## Final Score: {score} / {len(first_fifty)}")
-
