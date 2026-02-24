@@ -80,34 +80,59 @@ def clean_json_response(text):
 # REASONING FUNCTION
 # ----------------------------
 
-def solve_with_reason_model(mcqs_subset, user_answers):
+def solve_with_reason_model(single_q_dict, user_answer_dict):
+
+    # single_q_dict contains exactly ONE question
+    q_num, q_data = list(single_q_dict.items())[0]
+    question_text = q_data.get("question", "")
+    options = q_data.get("options", {})
+    user_option = user_answer_dict.get(q_num)
 
     prompt = f"""
-Evaluate these MCQs.
+You are helping a student understand one MCQ.
+
+Question:
+{question_text}
+
+Options:
+1. {options.get("1")}
+2. {options.get("2")}
+3. {options.get("3")}
+4. {options.get("4")}
+
+The student selected option: {user_option}
+
+1. Determine internally which option is correct.
+2. State whether the student is correct.
+3. If incorrect, explain briefly why.
+4. Keep explanation concise (2-4 lines).
 
 Return ONLY JSON in this format:
 
 {{
-  "1": {{
-    "correct_option": "4",
-    "user_option": "2",
-    "is_correct": false,
+  "{q_num}": {{
+    "correct_option": "X",
+    "user_option": "{user_option}",
+    "is_correct": true/false,
     "explanation": "Short explanation"
   }}
 }}
 
-Questions:
-{json.dumps(mcqs_subset)}
-
-User Answers:
-{json.dumps(user_answers)}
-
 Return raw JSON only.
+Do not add commentary.
 """
 
     try:
-        response = reason_model.generate_content(prompt)
+        response = reason_model.generate_content(
+            prompt,
+            request_options={"timeout": 60}
+        )
+
+        if not response.candidates:
+            return {}
+
         raw_text = response.text.strip()
+
     except Exception:
         return {}
 
@@ -123,39 +148,24 @@ Return raw JSON only.
         except Exception:
             return {}
 
-
 # ----------------------------
 # BATCH EVALUATION (NEW)
 # ----------------------------
 
-def solve_in_batches(mcqs, user_answers, batch_size=10):
+def solve_in_batches(mcqs, user_answers):
     all_results = {}
-    items = list(mcqs.items())
 
-    for i in range(0, len(items), batch_size):
+    for q_num, q_data in mcqs.items():
 
-        batch_raw = dict(items[i:i+batch_size])
+        single_q = {q_num: q_data}
+        single_user = {q_num: user_answers[q_num]}
 
-        # Compress question text to reduce token size
-        batch = {}
-        for k, v in batch_raw.items():
-            compressed_question = " ".join(
-                v.get("question", "").split()
-            )  # removes extra whitespace + newlines
+        result = solve_with_reason_model(single_q, single_user)
 
-            batch[k] = {
-                "question": compressed_question,
-                "options": v.get("options", {})
-            }
-
-        batch_user = {k: user_answers[k] for k in batch.keys()}
-
-        batch_result = solve_with_reason_model(batch, batch_user)
-
-        if not batch_result:
+        if not result:
             return {}
 
-        all_results.update(batch_result)
+        all_results.update(result)
 
     return all_results
 
@@ -265,4 +275,5 @@ if st.session_state.mcqs:
                     st.info(f"Explanation: {explanation}")
 
         st.markdown(f"## Final Score: {score} / {len(first_fifty)}")
+
 
