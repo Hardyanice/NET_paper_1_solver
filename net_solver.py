@@ -242,8 +242,8 @@ if st.session_state.mcqs:
 
     if st.button("Submit Test"):
 
-        with st.spinner("Evaluating answers in batches..."):
-            correct_answers = solve_in_batches(first_fifty, user_answers, batch_size=10)
+        with st.spinner("Evaluating answers..."):
+            correct_answers = solve_in_batches(first_fifty, user_answers)
 
         if not correct_answers:
             st.error("Evaluation failed. Please try again.")
@@ -275,5 +275,6 @@ if st.session_state.mcqs:
                     st.info(f"Explanation: {explanation}")
 
         st.markdown(f"## Final Score: {score} / {len(first_fifty)}")
+
 
 
