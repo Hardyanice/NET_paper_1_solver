@@ -82,6 +82,7 @@ def clean_json_response(text):
 
 def solve_with_reason_model(single_q_dict, user_answer_dict):
 
+    # single_q_dict contains exactly ONE question
     q_num, q_data = list(single_q_dict.items())[0]
     question_text = q_data.get("question", "")
     options = q_data.get("options", {})
@@ -101,20 +102,24 @@ Options:
 
 The student selected option: {user_option}
 
-1. Decide internally whether the student is correct.
-2. Respond ONLY in JSON format below.
-3. Do NOT generate an answer key.
-4. Do NOT list all correct options.
-5. Only evaluate this one question.
+1. Determine internally which option is correct.
+2. State whether the student is correct.
+3. If incorrect, explain briefly why.
+4. Keep explanation concise (2-4 lines).
 
-Return ONLY JSON:
+Return ONLY JSON in this format:
 
 {{
-  "is_correct": true/false,
-  "explanation": "Short explanation (2-4 lines)"
+  "{q_num}": {{
+    "correct_option": "X",
+    "user_option": "{user_option}",
+    "is_correct": true/false,
+    "explanation": "Short explanation"
+  }}
 }}
 
 Return raw JSON only.
+Do not add commentary.
 """
 
     try:
@@ -124,36 +129,24 @@ Return raw JSON only.
         )
 
         if not response.candidates:
-            return None
+            return {}
 
         raw_text = response.text.strip()
 
     except Exception:
-        return None
+        return {}
 
     cleaned = clean_json_response(raw_text)
 
     try:
-        parsed = json.loads(cleaned)
-        return {
-            q_num: {
-                "is_correct": parsed.get("is_correct"),
-                "explanation": parsed.get("explanation", "")
-            }
-        }
+        return json.loads(cleaned)
     except Exception:
         try:
             start = cleaned.find("{")
             end = cleaned.rfind("}") + 1
-            parsed = json.loads(cleaned[start:end])
-            return {
-                q_num: {
-                    "is_correct": parsed.get("is_correct"),
-                    "explanation": parsed.get("explanation", "")
-                }
-            }
+            return json.loads(cleaned[start:end])
         except Exception:
-            return None
+            return {}
 # ----------------------------
 # BATCH EVALUATION (NEW)
 # ----------------------------
@@ -169,16 +162,11 @@ def solve_in_batches(mcqs, user_answers):
         result = solve_with_reason_model(single_q, single_user)
 
         if not result:
-            all_results[q_num] = {
-                "is_correct": None,
-                "explanation": "Evaluation failed for this question."
-            }
-            continue
+            return {}
 
         all_results.update(result)
 
     return all_results
-
 
 # ----------------------------
 # SESSION STATE
