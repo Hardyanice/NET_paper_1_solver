@@ -41,7 +41,7 @@ uploaded_pdf = st.file_uploader("Upload UGC NET Paper PDF", type=["pdf"])
 
 def extract_with_gemini(pages):
     prompt = """
-Extract ONLY English MCQs from the given UGC NET Paper.
+Extract ONLY English MCQs from the given sample paper.
 
 If a question contains a TABLE, preserve it fully.
 Do not summarize.
@@ -286,3 +286,4 @@ if st.session_state.mcqs:
                 st.info(f"Explanation: {explanation}")
         
         st.markdown(f"## Final Score: {score} / {len(first_fifty)}")
+
